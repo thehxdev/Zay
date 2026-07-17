@@ -1,0 +1,14 @@
+.{
+    .name = .zay,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.17.0-dev.1398+cb5635714",
+    .fingerprint = 0xf318a7ead696f96f,
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "README.md",
+    },
+}

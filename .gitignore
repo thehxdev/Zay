@@ -1,0 +1,7 @@
+/.zig-cache/
+/zig-out/
+/.fossil-settings/
+
+.fslckout
+__FOSSIL__
+build.sh
