@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -14,9 +15,13 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.root_module.linkSystemLibrary("m", .{ .needed = true });
-    exe.root_module.linkSystemLibrary("X11", .{ .needed = true });
-    exe.root_module.linkSystemLibrary("Xrandr", .{ .needed = true });
+    if (builtin.os.tag == .linux) {
+        exe.root_module.linkSystemLibrary("m", .{ .needed = true });
+        exe.root_module.linkSystemLibrary("X11", .{ .needed = true });
+        exe.root_module.linkSystemLibrary("Xrandr", .{ .needed = true });
+    } else if (builtin.os.tag == .windows) {
+        // Add Windows related system libraries here
+    }
 
     b.installArtifact(exe);
 
