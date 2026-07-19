@@ -59,7 +59,7 @@ One can't even read and understand this simple expression that computes distance
 `(x1 - x2) ^ 2 + (y1 - y2) ^ 2`.
 
 Suddenly you have enough parentheses for a single type cast that you can call yourself a LISP programmer.
-You after a while you need to decode and decipher an expression to understand it. You can't even shadow
-a variable to make this ugly syntax more tolerable.
+After a while you need to decode and decipher an expression to understand it. You can't even shadowa variable
+to make this ugly syntax more tolerable.
 
 I know Zig want's to be as explicit as possible but syntax is absolute BS. I may change the language to [Odin](https://odin-lang.org).
