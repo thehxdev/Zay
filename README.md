@@ -33,8 +33,8 @@ main thread.
 I wanted to try the ideas introduced in that article and decided to write a software renderer because rendering is a highly parallelizable task.
 
 
-## I hate Zig's type casting syntax
-I also wanted to try Zig. The only thing that I realy hate SO MUCH is the type casting syntax. Like WTF?
+## I hate Zig
+I also wanted to try Zig. One thing that I realy hate SO MUCH is the type casting syntax. Like WTF?
 Why would I need to tell the compiler `@floatFromInt` or `@intFromFloat`. YOU ARE THE COMPILER, YOU KNOW
 THE TYPES! YOU CAN INFER FROM THE SOURCE VALUE THAT IT IS AN INT OR FLOAT! WHY I CAN'T SIMPLY WRITE:
 ```zig
@@ -54,12 +54,21 @@ Or look at this example:
 ```zig
 const d = @sqrt(math.pow(f32, @as(f32, @floatFromInt(mouseX)) - @as(f32, @floatFromInt(dcol)), 2) +
     math.pow(f32, @as(f32, @floatFromInt(mouseY)) - @as(f32, @floatFromInt(drow)), 2));
+
+// This could be just
+const d = @sqrt(math.pow(f32, mouseX.(f32) - dcol.(f32), 2) + math.pow(f32, mouseY.(f32) - drow.(f32), 2));
 ```
 One can't even read and understand this simple expression that computes distance of two points in 2D space:
-`(x1 - x2) ^ 2 + (y1 - y2) ^ 2`.
+`sqrt((x1 - x2) ^ 2 + (y1 - y2) ^ 2)`.
 
 Suddenly you have enough parentheses for a single type cast that you can call yourself a LISP programmer.
 After a while you need to decode and decipher an expression to understand it. You can't even shadowa variable
 to make this ugly syntax more tolerable.
 
-I know Zig want's to be as explicit as possible but syntax is absolute BS. I may change the language to [Odin](https://odin-lang.org).
+It also considers unused variables/constants/parameters as error. The exact same thing that I hate about Go too.
+It doesn't even let you to experiment and then cleanup later. At some situation you may have to experiment with
+other solutions to a problem BUT NOOO F* you Zig won't let you that. You have to write a perfect and clean solution
+every time you want to compile your program.
+
+I know Zig want's to be as explicit as possible but syntax and language rules are absolute BS. I may change the
+language to [Odin](https://odin-lang.org).
