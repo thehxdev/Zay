@@ -1,5 +1,6 @@
 const std = @import("std");
 const math = std.math;
+const mem = std.mem;
 const rgfw = @import("RGFW.zig");
 const Barrier = @import("barrier.zig").Barrier;
 
@@ -9,12 +10,11 @@ const Thread = std.Thread;
 const Io = std.Io;
 const Clock = Io.Clock;
 
-const MAX_THREADS: u32 = 32;
-
+const DEFAULT_THREADS_COUNT = 4;
 const ASPECT_RATIO: f32 = 16.0 / 9.0;
 const UPSCALE_FACTOR: u32 = 4;
 const RENDER_WIDTH: u32 = 320;
-const RENDER_HEIGHT: u32 = RENDER_WIDTH / ASPECT_RATIO;
+const RENDER_HEIGHT: u32 = @intFromFloat(RENDER_WIDTH / ASPECT_RATIO);
 const WINDOW_WIDTH: u32 = RENDER_WIDTH * UPSCALE_FACTOR;
 const WINDOW_HEIGHT: u32 = RENDER_HEIGHT * UPSCALE_FACTOR;
 const WINDOW_TITLE = "Zay!";
@@ -26,8 +26,9 @@ const MICROSECS_IN_SECOND: u32 = 1_000_000;
 const TARGET_FPS_DELTA_TIME: u32 = MICROSECS_IN_SECOND / TARGET_FPS;
 
 var running = true;
+var n_threads: u32 = DEFAULT_THREADS_COUNT;
 var io: Io = undefined;
-var n_threads: u32 = undefined;
+var gpa: mem.Allocator = undefined;
 var barrier: Barrier = undefined;
 
 var win: *rgfw.RGFW_window = undefined;
@@ -36,11 +37,28 @@ var surface: *rgfw.RGFW_surface = undefined;
 
 pub fn main(init: std.process.Init) !void {
     io = init.io;
+    gpa = init.gpa;
 
-    frame_buffer = try init.gpa.alloc(u32, WINDOW_HEIGHT * WINDOW_WIDTH);
-    defer init.gpa.free(frame_buffer);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    {
+        var i: usize = 0;
+        while (i < args.len) : (i += 1) {
+            if (mem.eql(u8, args[i], "-tc")) {
+                if (i + 1 >= args.len) {
+                    return error.NotEnoughArgs;
+                }
+                n_threads = try std.fmt.parseInt(u32, args[i + 1], 10);
+            } else if (mem.eql(u8, args[i], "-h")) {
+                std.debug.print("Usage: {s} [-tc THREAD_COUNT (default: {})]\n", .{ args[0], DEFAULT_THREADS_COUNT });
+                return;
+            }
+        }
+    }
 
-    n_threads = @min(try Thread.getCpuCount(), MAX_THREADS);
+    frame_buffer = try gpa.alloc(u32, WINDOW_HEIGHT * WINDOW_WIDTH);
+    defer gpa.free(frame_buffer);
+
+    n_threads = @min(try Thread.getCpuCount(), n_threads);
     barrier = .init(n_threads);
 
     std.debug.print("[i] rendering in {}x{} resolution\n", .{ RENDER_WIDTH, RENDER_HEIGHT });
@@ -49,12 +67,14 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("[i] frame rate will be locked on {} FPS\n", .{TARGET_FPS});
     }
 
-    var threads: [MAX_THREADS]Thread = undefined;
+    var threads = try gpa.alloc(Thread, n_threads);
+    defer gpa.free(threads);
+
     for (0..n_threads) |i| {
         const thread_index: u32 = @intCast(i);
         threads[i] = try Thread.spawn(.{}, thread_entry_point, .{thread_index});
     }
-    std.debug.print("[i] started rendering\n", .{});
+    std.debug.print("[i] started rendering with {} threads\n", .{n_threads});
     for (threads[0..n_threads]) |t| {
         t.join();
     }
@@ -102,11 +122,9 @@ fn thread_entry_point(thread_index: u32) !void {
         last_time = start_time;
 
         // Render loop
-        var j: usize = first_row_to_render;
-        while (j < one_past_last_row_to_render) : (j += 1) {
+        for (first_row_to_render..one_past_last_row_to_render) |j| {
             const jj = j * UPSCALE_FACTOR;
-            var i: usize = 0;
-            while (i < RENDER_WIDTH) : (i += 1) {
+            for (0..RENDER_WIDTH) |i| {
                 const ii = i * UPSCALE_FACTOR;
                 const color = pixel_color(jj, ii);
                 for (0..UPSCALE_FACTOR) |di| {
@@ -170,10 +188,12 @@ fn pixel_color(row: usize, col: usize) u32 {
 
     const d = math.sqrt(math.pow(f32, fmouseX - fcol, 2) + math.pow(f32, fmouseY - frow, 2));
     if (d < CIRCLE_RADIUS) {
-        const a = d / CIRCLE_RADIUS;
-        const start_value = Vec4{ 66.0 / 255.0, 182.0 / 255.0, 245.0 / 255.0, 1 };
-        const end_value = BG_COLOR_NORMALIZED;
-        const color = vec4_filled(1 - a) * start_value + vec4_filled(a) * end_value;
+        const color = blk: {
+            const a = d / CIRCLE_RADIUS;
+            const start_value = Vec4{ 80.0 / 255.0, 1, 80.0 / 255.0, 1 };
+            const end_value = BG_COLOR_NORMALIZED;
+            break :blk (vec4_filled(1 - a) * start_value) + (vec4_filled(a) * end_value);
+        };
         return color_from_normalized(color[0], color[1], color[2], color[3]);
     }
 
