@@ -51,7 +51,8 @@ pub fn main(init: std.process.Init) !void {
 
     var threads: [MAX_THREADS]Thread = undefined;
     for (0..n_threads) |i| {
-        threads[i] = try Thread.spawn(.{}, thread_entry_point, .{@as(u32, @intCast(i))});
+        const thread_index: u32 = @intCast(i);
+        threads[i] = try Thread.spawn(.{}, thread_entry_point, .{thread_index});
     }
     std.debug.print("[i] started rendering\n", .{});
     for (threads[0..n_threads]) |t| {
@@ -72,7 +73,6 @@ fn thread_entry_point(thread_index: u32) !void {
         surface = rgfw.RGFW_createSurface(@ptrCast(frame_buffer), WINDOW_WIDTH, WINDOW_HEIGHT, rgfw.RGFW_formatRGBA8);
         std.debug.print("[i] RGFW initialized\n", .{});
     }
-    try barrier.wait(io);
 
     const rows_to_render_count = RENDER_HEIGHT / n_threads;
     const rows_leftover_count = RENDER_HEIGHT % n_threads;
@@ -90,6 +90,9 @@ fn thread_entry_point(thread_index: u32) !void {
     if (is_thread_has_leftover) {
         one_past_last_row_to_render += 1;
     }
+
+    // Wait for all threads to get ready
+    try barrier.wait(io);
 
     var dt: i64 = 0;
     var last_time: i64 = 0;
@@ -121,7 +124,7 @@ fn thread_entry_point(thread_index: u32) !void {
         // Draw and handle events
         if (thread_index == 0) {
             const fps = @divCeil(MICROSECS_IN_SECOND, dt);
-            std.debug.print("\r[i] FPS = {d:4} ", .{fps});
+            std.debug.print("\r[i] FPS = {} ", .{fps});
             if (rgfw.RGFW_window_shouldClose(win) == rgfw.RGFW_FALSE) {
                 rgfw.RGFW_pollEvents();
                 _ = rgfw.RGFW_window_blitSurface(win, surface);
@@ -152,28 +155,33 @@ fn thread_entry_point(thread_index: u32) !void {
 }
 
 const CIRCLE_RADIUS = 200;
-
 const BG_COLOR_NORMALIZED = Vec4{ 0.094, 0.094, 0.094, 1 };
 const BG_COLOR = color_from_normalized(0.094, 0.094, 0.094, 1);
 
 fn pixel_color(row: usize, col: usize) u32 {
-    const drow = row;
-    const dcol = col;
     var mouseX: i32 = undefined;
     var mouseY: i32 = undefined;
     _ = rgfw.RGFW_window_getMouse(win, &mouseX, &mouseY);
 
-    const d = @sqrt(math.pow(f32, @as(f32, @floatFromInt(mouseX)) - @as(f32, @floatFromInt(dcol)), 2) +
-        math.pow(f32, @as(f32, @floatFromInt(mouseY)) - @as(f32, @floatFromInt(drow)), 2));
+    const frow: f32 = @floatFromInt(row);
+    const fcol: f32 = @floatFromInt(col);
+    const fmouseX: f32 = @floatFromInt(mouseX);
+    const fmouseY: f32 = @floatFromInt(mouseY);
+
+    const d = math.sqrt(math.pow(f32, fmouseX - fcol, 2) + math.pow(f32, fmouseY - frow, 2));
     if (d < CIRCLE_RADIUS) {
         const a = d / CIRCLE_RADIUS;
         const start_value = Vec4{ 66.0 / 255.0, 182.0 / 255.0, 245.0 / 255.0, 1 };
         const end_value = BG_COLOR_NORMALIZED;
-        const color = @as(Vec4, @splat(1 - a)) * start_value + @as(Vec4, @splat(a)) * end_value;
+        const color = vec4_filled(1 - a) * start_value + vec4_filled(a) * end_value;
         return color_from_normalized(color[0], color[1], color[2], color[3]);
     }
 
     return BG_COLOR;
+}
+
+fn vec4_filled(v: f32) Vec4 {
+    return @splat(v);
 }
 
 fn color_from_normalized(r: f32, g: f32, b: f32, a: f32) u32 {
