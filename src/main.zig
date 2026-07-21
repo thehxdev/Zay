@@ -3,8 +3,10 @@ const math = std.math;
 const mem = std.mem;
 const rgfw = @import("RGFW.zig");
 const Barrier = @import("barrier.zig").Barrier;
+const vector = @import("vector.zig");
+const Camera = @import("camera.zig").Camera;
 
-const Vec4 = @Vector(4, f32);
+const Vec4 = vector.Vec(4);
 
 const Thread = std.Thread;
 const Io = std.Io;
@@ -21,10 +23,12 @@ const WINDOW_HEIGHT = RENDER_HEIGHT * UPSCALE_FACTOR;
 const WINDOW_TITLE = "Zay!";
 
 // Locking frame rate can significantly reduce CPU usage
-const LOCK_FRAME_RATE: bool = true;
-const TARGET_FPS: u32 = 30;
-const MICROSECS_IN_SECOND: u32 = 1_000_000;
-const TARGET_FPS_DELTA_TIME: u32 = MICROSECS_IN_SECOND / TARGET_FPS;
+const LOCK_FRAME_RATE = true;
+const TARGET_FPS = 60;
+const MICROSECS_IN_SECOND = 1_000_000;
+const TARGET_FPS_DELTA_TIME = MICROSECS_IN_SECOND / TARGET_FPS;
+
+var camera: Camera = undefined;
 
 var running = true;
 var threads_count: u32 = DEFAULT_THREADS_COUNT;
@@ -35,21 +39,6 @@ var barrier: Barrier = undefined;
 var win: *rgfw.RGFW_window = undefined;
 var frame_buffer: []u32 = undefined;
 var surface: *rgfw.RGFW_surface = undefined;
-
-const CIRCLES_COUNT = 2;
-const Circles = struct {
-    // SoA (Structure of Arrays)
-    center: [CIRCLES_COUNT][2]f32,
-    radius: [CIRCLES_COUNT]f32,
-};
-
-var circles = Circles{
-    .center = .{
-        .{ WINDOW_WIDTH / 4, WINDOW_HEIGHT / 2 },
-        .{ WINDOW_WIDTH / 4 * 3, WINDOW_HEIGHT / 2 },
-    },
-    .radius = [_]f32{ 50, 50 },
-};
 
 pub fn main(init: std.process.Init) !void {
     io = init.io;
@@ -70,6 +59,9 @@ pub fn main(init: std.process.Init) !void {
             }
         }
     }
+    // End argument parsing
+
+    camera = .init(WINDOW_WIDTH, WINDOW_HEIGHT);
 
     frame_buffer = try gpa.alloc(u32, WINDOW_HEIGHT * WINDOW_WIDTH);
     defer gpa.free(frame_buffer);
@@ -103,7 +95,7 @@ fn thread_entry_point(thread_index: u32) !void {
         // Initialize RGFW to show the software rendered image
         _ = rgfw.RGFW_init(WINDOW_TITLE, 0);
 
-        win = rgfw.RGFW_createWindow(WINDOW_TITLE, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, rgfw.RGFW_windowCenter | rgfw.RGFW_windowTransparent);
+        win = rgfw.RGFW_createWindow(WINDOW_TITLE, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, rgfw.RGFW_windowCenter);
         rgfw.RGFW_window_setExitKey(win, rgfw.RGFW_keyEscape);
 
         surface = rgfw.RGFW_createSurface(@ptrCast(frame_buffer), WINDOW_WIDTH, WINDOW_HEIGHT, rgfw.RGFW_formatRGBA8);
@@ -143,14 +135,14 @@ fn thread_entry_point(thread_index: u32) !void {
             const jj = j * UPSCALE_FACTOR;
             for (0..RENDER_WIDTH) |i| {
                 const ii = i * UPSCALE_FACTOR;
-                const color = pixel_color(jj, ii);
+                const color = camera.pixel_color(jj, ii);
                 for (0..UPSCALE_FACTOR) |di| {
                     frame_buffer[jj * WINDOW_WIDTH_U + (ii + di)] = color;
                 }
             }
-            const row = frame_buffer[jj * WINDOW_WIDTH_U .. (jj + 1) * WINDOW_WIDTH_U];
+            const rendered_row = frame_buffer[jj * WINDOW_WIDTH_U .. (jj + 1) * WINDOW_WIDTH_U];
             for (1..UPSCALE_FACTOR) |dj| {
-                @memcpy(frame_buffer[(jj + dj) * WINDOW_WIDTH_U .. (jj + dj + 1) * WINDOW_WIDTH_U], row);
+                @memcpy(frame_buffer[(jj + dj) * WINDOW_WIDTH_U .. (jj + dj + 1) * WINDOW_WIDTH_U], rendered_row);
             }
         }
         // Wait for all threads to finish rendering
@@ -190,58 +182,28 @@ fn thread_entry_point(thread_index: u32) !void {
     }
 }
 
-const CIRCLE_RADIUS = 200;
-const BG_COLOR_NORMALIZED = Vec4{ 0.094, 0.094, 0.094, 1 };
-const BG_COLOR = color_from_normalized(0.094, 0.094, 0.094, 1);
+fn update(dt: i64) void {
+    // _ = dt;
+    const step = 2 * @as(f32, @floatFromInt(dt)) / MICROSECS_IN_SECOND;
 
-fn pixel_color(row: usize, col: usize) u32 {
-    const frow: f32 = @floatFromInt(row);
-    const fcol: f32 = @floatFromInt(col);
-
-    for (0..CIRCLES_COUNT) |i| {
-        const center = circles.center[i];
-        const radius = circles.radius[i];
-        const d = math.sqrt(math.pow(f32, center[0] - fcol, 2) + math.pow(f32, center[1] - frow, 2));
-        if (d < radius) {
-            // const color = blk: {
-            //     const a = d / c.radius;
-            //     const start_value = Vec4{ 80.0 / 255.0, 1, 80.0 / 255.0, 1 };
-            //     const end_value = BG_COLOR_NORMALIZED;
-            //     break :blk (vec4_filled(1 - a) * start_value) + (vec4_filled(a) * end_value);
-            // };
-            // return color_from_normalized(color[0], color[1], color[2], color[3]);
-            return color_from_bytes(0x50, 0xFF, 0x50, 0xFF);
-        }
+    if (rgfw.RGFW_window_isKeyDown(win, rgfw.RGFW_keyLeft) == rgfw.RGFW_TRUE) {
+        camera.pixel00[0] += step;
+    }
+    if (rgfw.RGFW_window_isKeyDown(win, rgfw.RGFW_keyRight) == rgfw.RGFW_TRUE) {
+        camera.pixel00[0] -= step;
     }
 
-    return BG_COLOR;
-}
+    if (rgfw.RGFW_window_isKeyDown(win, rgfw.RGFW_keyDown) == rgfw.RGFW_TRUE) {
+        camera.pixel00[1] += step;
+    }
+    if (rgfw.RGFW_window_isKeyDown(win, rgfw.RGFW_keyUp) == rgfw.RGFW_TRUE) {
+        camera.pixel00[1] -= step;
+    }
 
-fn update(dt: i64) void {
-    _ = dt;
-
-    const t = @as(f32, @floatFromInt(Clock.awake.now(io).toMilliseconds())) / 1000.0;
-
-    const freq = 2;
-    circles.center[0][0] = math.cos(t * freq) * -120 + (WINDOW_WIDTH / 4);
-    circles.center[0][1] = math.cos(t * freq) * 120 + (WINDOW_HEIGHT / 2);
-
-    circles.center[1][0] = math.sin(t * freq) * 120 + (WINDOW_WIDTH / 4 * 3);
-    circles.center[1][1] = math.sin(t * freq) * 120 + (WINDOW_HEIGHT / 2);
-}
-
-fn vec4_filled(v: f32) Vec4 {
-    return @splat(v);
-}
-
-fn color_from_normalized(r: f32, g: f32, b: f32, a: f32) u32 {
-    const rb: u8 = @intFromFloat(r * 255.999);
-    const gb: u8 = @intFromFloat(g * 255.999);
-    const bb: u8 = @intFromFloat(b * 255.999);
-    const ab: u8 = @intFromFloat(a * 255.999);
-    return color_from_bytes(rb, gb, bb, ab);
-}
-
-fn color_from_bytes(r: u32, g: u32, b: u32, a: u32) u32 {
-    return (r | (g << 8) | (b << 16) | (a << 24));
+    if (rgfw.RGFW_window_isKeyDown(win, rgfw.RGFW_keyO) == rgfw.RGFW_TRUE) {
+        camera.pixel00[2] += step;
+    }
+    if (rgfw.RGFW_window_isKeyDown(win, rgfw.RGFW_keyZ) == rgfw.RGFW_TRUE) {
+        camera.pixel00[2] -= step;
+    }
 }
