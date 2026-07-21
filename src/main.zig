@@ -11,22 +11,23 @@ const Io = std.Io;
 const Clock = Io.Clock;
 
 const DEFAULT_THREADS_COUNT = 4;
-const ASPECT_RATIO: f32 = 16.0 / 9.0;
-const UPSCALE_FACTOR: u32 = 4;
-const RENDER_WIDTH: u32 = 320;
-const RENDER_HEIGHT: u32 = @intFromFloat(RENDER_WIDTH / ASPECT_RATIO);
-const WINDOW_WIDTH: u32 = RENDER_WIDTH * UPSCALE_FACTOR;
-const WINDOW_HEIGHT: u32 = RENDER_HEIGHT * UPSCALE_FACTOR;
+
+const ASPECT_RATIO = 16.0 / 9.0;
+const UPSCALE_FACTOR = 4;
+const RENDER_WIDTH = 320.0;
+const RENDER_HEIGHT = RENDER_WIDTH / ASPECT_RATIO;
+const WINDOW_WIDTH = RENDER_WIDTH * UPSCALE_FACTOR;
+const WINDOW_HEIGHT = RENDER_HEIGHT * UPSCALE_FACTOR;
 const WINDOW_TITLE = "Zay!";
 
 // Locking frame rate can significantly reduce CPU usage
 const LOCK_FRAME_RATE: bool = true;
-const TARGET_FPS: u32 = 60;
+const TARGET_FPS: u32 = 30;
 const MICROSECS_IN_SECOND: u32 = 1_000_000;
 const TARGET_FPS_DELTA_TIME: u32 = MICROSECS_IN_SECOND / TARGET_FPS;
 
 var running = true;
-var n_threads: u32 = DEFAULT_THREADS_COUNT;
+var threads_count: u32 = DEFAULT_THREADS_COUNT;
 var io: Io = undefined;
 var gpa: mem.Allocator = undefined;
 var barrier: Barrier = undefined;
@@ -34,6 +35,21 @@ var barrier: Barrier = undefined;
 var win: *rgfw.RGFW_window = undefined;
 var frame_buffer: []u32 = undefined;
 var surface: *rgfw.RGFW_surface = undefined;
+
+const CIRCLES_COUNT = 2;
+const Circles = struct {
+    // SoA (Structure of Arrays)
+    center: [CIRCLES_COUNT][2]f32,
+    radius: [CIRCLES_COUNT]f32,
+};
+
+var circles = Circles{
+    .center = .{
+        .{ WINDOW_WIDTH / 4, WINDOW_HEIGHT / 2 },
+        .{ WINDOW_WIDTH / 4 * 3, WINDOW_HEIGHT / 2 },
+    },
+    .radius = [_]f32{ 50, 50 },
+};
 
 pub fn main(init: std.process.Init) !void {
     io = init.io;
@@ -47,7 +63,7 @@ pub fn main(init: std.process.Init) !void {
                 if (i + 1 >= args.len) {
                     return error.NotEnoughArgs;
                 }
-                n_threads = try std.fmt.parseInt(u32, args[i + 1], 10);
+                threads_count = try std.fmt.parseInt(u32, args[i + 1], 10);
             } else if (mem.eql(u8, args[i], "-h")) {
                 std.debug.print("Usage: {s} [-tc THREAD_COUNT (default: {})]\n", .{ args[0], DEFAULT_THREADS_COUNT });
                 return;
@@ -58,8 +74,8 @@ pub fn main(init: std.process.Init) !void {
     frame_buffer = try gpa.alloc(u32, WINDOW_HEIGHT * WINDOW_WIDTH);
     defer gpa.free(frame_buffer);
 
-    n_threads = @min(try Thread.getCpuCount(), n_threads);
-    barrier = .init(n_threads);
+    threads_count = @min(try Thread.getCpuCount(), threads_count);
+    barrier = .init(threads_count);
 
     std.debug.print("[i] rendering in {}x{} resolution\n", .{ RENDER_WIDTH, RENDER_HEIGHT });
     std.debug.print("[i] upscaling to {}x{} resolution\n", .{ WINDOW_WIDTH, WINDOW_HEIGHT });
@@ -67,15 +83,15 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("[i] frame rate will be locked on {} FPS\n", .{TARGET_FPS});
     }
 
-    var threads = try gpa.alloc(Thread, n_threads);
+    var threads = try gpa.alloc(Thread, threads_count);
     defer gpa.free(threads);
 
-    for (0..n_threads) |i| {
+    for (0..threads_count) |i| {
         const thread_index: u32 = @intCast(i);
         threads[i] = try Thread.spawn(.{}, thread_entry_point, .{thread_index});
     }
-    std.debug.print("[i] started rendering with {} threads\n", .{n_threads});
-    for (threads[0..n_threads]) |t| {
+    std.debug.print("[i] started rendering with {} threads\n", .{threads_count});
+    for (threads[0..threads_count]) |t| {
         t.join();
     }
 
@@ -94,8 +110,8 @@ fn thread_entry_point(thread_index: u32) !void {
         std.debug.print("[i] RGFW initialized\n", .{});
     }
 
-    const rows_to_render_count = RENDER_HEIGHT / n_threads;
-    const rows_leftover_count = RENDER_HEIGHT % n_threads;
+    const rows_to_render_count = @as(u32, RENDER_HEIGHT) / threads_count;
+    const rows_leftover_count = @as(u32, RENDER_HEIGHT) % threads_count;
     const is_thread_has_leftover = (thread_index < rows_leftover_count);
 
     var rows_leftover_before_this_thread_index: u32 = 0;
@@ -110,6 +126,7 @@ fn thread_entry_point(thread_index: u32) !void {
     if (is_thread_has_leftover) {
         one_past_last_row_to_render += 1;
     }
+    const WINDOW_WIDTH_U: usize = WINDOW_WIDTH;
 
     // Wait for all threads to get ready
     try barrier.wait(io);
@@ -117,7 +134,7 @@ fn thread_entry_point(thread_index: u32) !void {
     var dt: i64 = 0;
     var last_time: i64 = 0;
     while (running) {
-        const start_time = Clock.real.now(io).toMicroseconds();
+        const start_time = Clock.awake.now(io).toMicroseconds();
         dt = start_time - last_time;
         last_time = start_time;
 
@@ -128,12 +145,12 @@ fn thread_entry_point(thread_index: u32) !void {
                 const ii = i * UPSCALE_FACTOR;
                 const color = pixel_color(jj, ii);
                 for (0..UPSCALE_FACTOR) |di| {
-                    frame_buffer[jj * WINDOW_WIDTH + (ii + di)] = color;
+                    frame_buffer[jj * WINDOW_WIDTH_U + (ii + di)] = color;
                 }
             }
-            const row = frame_buffer[jj * WINDOW_WIDTH .. (jj + 1) * WINDOW_WIDTH];
+            const row = frame_buffer[jj * WINDOW_WIDTH_U .. (jj + 1) * WINDOW_WIDTH_U];
             for (1..UPSCALE_FACTOR) |dj| {
-                @memcpy(frame_buffer[(jj + dj) * WINDOW_WIDTH .. (jj + dj + 1) * WINDOW_WIDTH], row);
+                @memcpy(frame_buffer[(jj + dj) * WINDOW_WIDTH_U .. (jj + dj + 1) * WINDOW_WIDTH_U], row);
             }
         }
         // Wait for all threads to finish rendering
@@ -145,6 +162,7 @@ fn thread_entry_point(thread_index: u32) !void {
             std.debug.print("\r[i] FPS = {} ", .{fps});
             if (rgfw.RGFW_window_shouldClose(win) == rgfw.RGFW_FALSE) {
                 rgfw.RGFW_pollEvents();
+                update(dt);
                 _ = rgfw.RGFW_window_blitSurface(win, surface);
             } else {
                 // Only thread `0` can write to this value. No race.
@@ -153,7 +171,7 @@ fn thread_entry_point(thread_index: u32) !void {
         }
 
         if (LOCK_FRAME_RATE) {
-            const end_time = Clock.real.now(io).toMicroseconds();
+            const end_time = Clock.awake.now(io).toMicroseconds();
             const delta = end_time - start_time;
             if (delta < TARGET_FPS_DELTA_TIME) {
                 try io.sleep(.fromMicroseconds(TARGET_FPS_DELTA_TIME - delta), .awake);
@@ -177,27 +195,39 @@ const BG_COLOR_NORMALIZED = Vec4{ 0.094, 0.094, 0.094, 1 };
 const BG_COLOR = color_from_normalized(0.094, 0.094, 0.094, 1);
 
 fn pixel_color(row: usize, col: usize) u32 {
-    var mouseX: i32 = undefined;
-    var mouseY: i32 = undefined;
-    _ = rgfw.RGFW_window_getMouse(win, &mouseX, &mouseY);
-
     const frow: f32 = @floatFromInt(row);
     const fcol: f32 = @floatFromInt(col);
-    const fmouseX: f32 = @floatFromInt(mouseX);
-    const fmouseY: f32 = @floatFromInt(mouseY);
 
-    const d = math.sqrt(math.pow(f32, fmouseX - fcol, 2) + math.pow(f32, fmouseY - frow, 2));
-    if (d < CIRCLE_RADIUS) {
-        const color = blk: {
-            const a = d / CIRCLE_RADIUS;
-            const start_value = Vec4{ 80.0 / 255.0, 1, 80.0 / 255.0, 1 };
-            const end_value = BG_COLOR_NORMALIZED;
-            break :blk (vec4_filled(1 - a) * start_value) + (vec4_filled(a) * end_value);
-        };
-        return color_from_normalized(color[0], color[1], color[2], color[3]);
+    for (0..CIRCLES_COUNT) |i| {
+        const center = circles.center[i];
+        const radius = circles.radius[i];
+        const d = math.sqrt(math.pow(f32, center[0] - fcol, 2) + math.pow(f32, center[1] - frow, 2));
+        if (d < radius) {
+            // const color = blk: {
+            //     const a = d / c.radius;
+            //     const start_value = Vec4{ 80.0 / 255.0, 1, 80.0 / 255.0, 1 };
+            //     const end_value = BG_COLOR_NORMALIZED;
+            //     break :blk (vec4_filled(1 - a) * start_value) + (vec4_filled(a) * end_value);
+            // };
+            // return color_from_normalized(color[0], color[1], color[2], color[3]);
+            return color_from_bytes(0x50, 0xFF, 0x50, 0xFF);
+        }
     }
 
     return BG_COLOR;
+}
+
+fn update(dt: i64) void {
+    _ = dt;
+
+    const t = @as(f32, @floatFromInt(Clock.awake.now(io).toMilliseconds())) / 1000.0;
+
+    const freq = 2;
+    circles.center[0][0] = math.cos(t * freq) * -120 + (WINDOW_WIDTH / 4);
+    circles.center[0][1] = math.cos(t * freq) * 120 + (WINDOW_HEIGHT / 2);
+
+    circles.center[1][0] = math.sin(t * freq) * 120 + (WINDOW_WIDTH / 4 * 3);
+    circles.center[1][1] = math.sin(t * freq) * 120 + (WINDOW_HEIGHT / 2);
 }
 
 fn vec4_filled(v: f32) Vec4 {
