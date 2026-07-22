@@ -11,6 +11,8 @@ const Ray = struct {
     }
 };
 
+const half_vec3 = vector.filled(3, 0.5);
+
 origin: Vec3,
 pixel00: Vec3,
 pixel_delta_u: Vec3,
@@ -26,16 +28,15 @@ pub fn init(window_width: f32, window_height: f32) Camera {
     const viewport_u = Vec3{ viewport_width, 0, 0 };
     const viewport_v = Vec3{ 0, -viewport_height, 0 };
 
-    const half_vec = vector.filled(3, 0.5);
     const viewport_upper_left: Vec3 = origin - Vec3{ 0, 0, focal_length } -
-        (viewport_u * half_vec) - (viewport_v * half_vec);
+        (viewport_u * half_vec3) - (viewport_v * half_vec3);
 
     const pixel_delta_u: Vec3 = viewport_u / vector.filled(3, window_width);
     const pixel_delta_v: Vec3 = viewport_v / vector.filled(3, window_height);
 
     return .{
         .origin = origin,
-        .pixel00 = viewport_upper_left + (pixel_delta_u + pixel_delta_v) * half_vec,
+        .pixel00 = viewport_upper_left + (pixel_delta_u + pixel_delta_v) * half_vec3,
         .pixel_delta_u = pixel_delta_u,
         .pixel_delta_v = pixel_delta_v,
     };
@@ -48,7 +49,7 @@ pub fn pixel_color(camera: *Camera, j: usize, i: usize) u32 {
     const t = sphere_hit(sphere_center, 0.5, ray);
     if (t > 0) {
         const normal = vector.unit(3, ray.at(t) - sphere_center);
-        const color = (normal + vector.filled(3, 1)) * vector.filled(3, 0.5);
+        const color = (normal + vector.filled(3, 1)) * half_vec3;
         return color_from_normalized(color[0], color[1], color[2], 1);
     }
     return color_from_bytes(0x18, 0x18, 0x18, 0xFF);

@@ -46,7 +46,7 @@ pub fn main(init: std.process.Init) !void {
 
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     {
-        var i: usize = 0;
+        var i: usize = 1;
         while (i < args.len) : (i += 1) {
             if (mem.eql(u8, args[i], "-tc")) {
                 if (i + 1 >= args.len) {
@@ -71,10 +71,10 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("[i] rendering in {}x{} resolution\n", .{ RENDER_WIDTH, RENDER_HEIGHT });
     std.debug.print("[i] upscaling to {}x{} resolution\n", .{ WINDOW_WIDTH, WINDOW_HEIGHT });
+
     if (LOCK_FRAME_RATE) {
         std.debug.print("[i] frame rate will be locked on {} FPS\n", .{TARGET_FPS});
     }
-
     var threads = try gpa.alloc(Thread, threads_count);
     defer gpa.free(threads);
 
@@ -183,7 +183,6 @@ fn thread_entry_point(thread_index: u32) !void {
 }
 
 fn update(dt: i64) void {
-    // _ = dt;
     const step = 2 * @as(f32, @floatFromInt(dt)) / MICROSECS_IN_SECOND;
 
     if (rgfw.RGFW_window_isKeyDown(win, rgfw.RGFW_keyLeft) == rgfw.RGFW_TRUE) {
