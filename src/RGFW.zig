@@ -1,3 +1,6 @@
+// Generated with `zig translate-c` and fixed compiler errors in generated code.
+// Errors were related to unused constants and wrong `@as()` type coercion.
+
 const __root = @This();
 pub const __builtin = @import("std").zig.c_translation.builtins;
 pub const __helpers = @import("std").zig.c_translation.helpers;
