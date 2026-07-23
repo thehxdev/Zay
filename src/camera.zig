@@ -6,7 +6,7 @@ const Ray = struct {
     origin: Vec3,
     direction: Vec3,
 
-    pub fn at(ray: *const Ray, t: f32) Vec3 {
+    pub fn at(ray: *const Ray, t: f64) Vec3 {
         return ray.origin + (ray.direction * vector.filled(3, t));
     }
 };
@@ -18,10 +18,10 @@ pixel00: Vec3,
 pixel_delta_u: Vec3,
 pixel_delta_v: Vec3,
 
-pub fn init(window_width: f32, window_height: f32) Camera {
+pub fn init(window_width: f64, window_height: f64) Camera {
     const origin = Vec3{ 0, 0, 0 };
 
-    const focal_length: f32 = 1.0;
+    const focal_length: f64 = 1.0;
     const viewport_height = 2.0;
     const viewport_width = viewport_height * (window_width / window_height);
 
@@ -55,7 +55,7 @@ pub fn pixel_color(camera: *Camera, j: usize, i: usize) u32 {
     return color_from_bytes(0x18, 0x18, 0x18, 0xFF);
 }
 
-fn sphere_hit(center: Vec3, radius: f32, ray: Ray) f32 {
+fn sphere_hit(center: Vec3, radius: f64, ray: Ray) f64 {
     const oc = center - ray.origin;
     const a = vector.len_squared(3, ray.direction);
     const b = -2.0 * vector.dot(3, ray.direction, oc);
@@ -78,7 +78,7 @@ fn get_ray(camera: *Camera, j: usize, i: usize) Ray {
     };
 }
 
-fn color_from_normalized(r: f32, g: f32, b: f32, a: f32) u32 {
+fn color_from_normalized(r: f64, g: f64, b: f64, a: f64) u32 {
     const rb: u8 = @intFromFloat(r * 255.999);
     const gb: u8 = @intFromFloat(g * 255.999);
     const bb: u8 = @intFromFloat(b * 255.999);

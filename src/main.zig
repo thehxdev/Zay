@@ -10,7 +10,7 @@ const Vec4 = vector.Vec(4);
 
 const Thread = std.Thread;
 const Io = std.Io;
-const Clock = Io.Clock;
+const clock = Io.Clock.awake;
 
 const DEFAULT_THREADS_COUNT = 4;
 
@@ -126,7 +126,7 @@ fn thread_entry_point(thread_index: u32) !void {
     var dt: i64 = 0;
     var last_time: i64 = 0;
     while (running) {
-        const start_time = Clock.awake.now(io).toMicroseconds();
+        const start_time = clock.now(io).toMicroseconds();
         dt = start_time - last_time;
         last_time = start_time;
 
@@ -163,7 +163,7 @@ fn thread_entry_point(thread_index: u32) !void {
         }
 
         if (LOCK_FRAME_RATE) {
-            const end_time = Clock.awake.now(io).toMicroseconds();
+            const end_time = clock.now(io).toMicroseconds();
             const delta = end_time - start_time;
             if (delta < TARGET_FPS_DELTA_TIME) {
                 try io.sleep(.fromMicroseconds(TARGET_FPS_DELTA_TIME - delta), .awake);
@@ -183,7 +183,7 @@ fn thread_entry_point(thread_index: u32) !void {
 }
 
 fn update(dt: i64) void {
-    const step = 2 * @as(f32, @floatFromInt(dt)) / MICROSECS_IN_SECOND;
+    const step = 2 * @as(f64, @floatFromInt(dt)) / MICROSECS_IN_SECOND;
 
     if (rgfw.RGFW_window_isKeyDown(win, rgfw.RGFW_keyLeft) == rgfw.RGFW_TRUE) {
         camera.pixel00[0] += step;
